@@ -110,8 +110,8 @@ $plist_head
 </plist>
 EOF
 
-    codesign --force --options runtime --entitlements build/widget.entitlements -s "$IDENTITY" "$WIDGET"
-    codesign --force --options runtime --entitlements build/app.entitlements -s "$IDENTITY" "$APP"
+    codesign --force --options runtime --timestamp --entitlements build/widget.entitlements -s "$IDENTITY" "$WIDGET"
+    codesign --force --options runtime --timestamp --entitlements build/app.entitlements -s "$IDENTITY" "$APP"
 else
     codesign --force -s - "$APP"
 fi
