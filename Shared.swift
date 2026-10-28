@@ -101,25 +101,11 @@ func linkDisplay(_ text: String) -> String {
 extension View {
     // ponytail: Liquid Glass on macOS 26+, frosted material before that
     @ViewBuilder
-    func glass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
+    func glass<S: Shape>(_ shape: S, tint: Color? = nil) -> some View {
         if #available(macOS 26, *) {
-            glassEffect(Glass.regular.tint(tint).interactive(interactive), in: shape)
+            glassEffect(Glass.regular.tint(tint), in: shape)
         } else {
             background(tint.map { AnyShapeStyle($0.opacity(0.35)) } ?? AnyShapeStyle(.ultraThinMaterial), in: shape)
-        }
-    }
-}
-
-// Lets neighbouring glass shapes render together, which Apple recommends for rows of glass views.
-struct GlassGroup<Content: View>: View {
-    let spacing: CGFloat
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        if #available(macOS 26, *) {
-            GlassEffectContainer(spacing: spacing) { content }
-        } else {
-            content
         }
     }
 }

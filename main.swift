@@ -163,7 +163,7 @@ struct HistoryView: View {
                 .font(.system(size: 12))
                 .padding(.horizontal, 10)
                 .frame(width: 150, height: 28)
-                .glass(Capsule(), interactive: true)
+                .glass(Capsule())
                 Menu {
                     Button("Clear History…") { model.confirmingClear = true }
                         .disabled(store.items.allSatisfy(\.pinned))
@@ -186,11 +186,9 @@ struct HistoryView: View {
             .padding(.leading, 4)
 
             ScrollView(.horizontal) {
-                GlassGroup(spacing: 6) {
-                    HStack(spacing: 6) {
-                        ForEach([nil] + model.kinds, id: \.self) { kind in
-                            chip(kind)
-                        }
+                HStack(spacing: 6) {
+                    ForEach([nil] + model.kinds, id: \.self) { kind in
+                        chip(kind)
                     }
                 }
                 .padding(.horizontal, 2)
@@ -270,7 +268,8 @@ struct HistoryView: View {
             .padding(.horizontal, 10)
             .frame(height: 26)
             .foregroundStyle(selected ? Color.white : Color.primary)
-            .glass(Capsule(), tint: selected ? .accentColor : nil, interactive: true)
+            .glass(Capsule(), tint: selected ? .accentColor : nil)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
