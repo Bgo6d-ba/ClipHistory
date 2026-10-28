@@ -37,7 +37,7 @@ universal() {
     lipo -create build/arm64 build/x86_64 -output "$out"
 }
 
-universal "Shared.swift main.swift" "$APP/Contents/MacOS/ClipHistory"
+universal "Shared.swift Store.swift SelfTest.swift main.swift" "$APP/Contents/MacOS/ClipHistory"
 
 plist_head='<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -51,8 +51,8 @@ $plist_head
     <key>CFBundleName</key><string>ClipHistory</string>
     <key>CFBundleExecutable</key><string>ClipHistory</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>1.2</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     $group_key
@@ -85,8 +85,8 @@ $plist_head
     <key>CFBundleDisplayName</key><string>ClipHistory</string>
     <key>CFBundleExecutable</key><string>ClipHistoryWidget</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
-    <key>CFBundleShortVersionString</key><string>1.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>1.2</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     $group_key
     <key>NSExtension</key>

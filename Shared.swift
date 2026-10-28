@@ -1,10 +1,9 @@
-import CryptoKit
 import Foundation
 import ImageIO
 import SwiftUI
 
-// build.sh writes the App Group into Info.plist when it signs with a team. The widget reads history from that
-// shared container; unsigned builds have no group and keep history in Application Support instead.
+// build.sh writes the App Group into Info.plist when it signs with a team. The widget reads its snapshot from that
+// shared container; unsigned builds have no group (and no widget) and keep history in Application Support instead.
 let groupID = Bundle.main.object(forInfoDictionaryKey: "ClipHistoryAppGroup") as? String
 let sharedDir = groupID.flatMap { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) }
     ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClipHistory")
@@ -15,10 +14,22 @@ struct Clip: Codable, Equatable, Identifiable {
     var date: Date? = Date()
     var image: String?
     var id: String { image ?? text }
-    var key: String { SHA256.hash(data: Data(id.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined() }
 }
 
-enum Kind: CaseIterable {
+// The only history the widget can read: the few items it shows, already shortened, with tiny thumbnails.
+// The full history stays encrypted; see Store.swift.
+struct WidgetItem: Codable, Identifiable {
+    var title: String
+    var kind: Kind
+    var pinned: Bool
+    var date: Date?
+    var token: String
+    var swatch: String?
+    var thumbnail: Data?
+    var id: String { token }
+}
+
+enum Kind: String, CaseIterable, Codable {
     case link, color, image, code, text
 
     var title: String { ["Links", "Colors", "Images", "Code", "Text"][Kind.allCases.firstIndex(of: self)!] }
@@ -110,21 +121,14 @@ extension View {
     }
 }
 
-private let thumbnails = NSCache<NSString, NSImage>()
-
-// Decodes a small preview with ImageIO instead of the full image, and keeps it for the next redraw.
-func thumbnail(_ url: URL, maxPixel: Int) -> NSImage? {
-    let key = "\(url.path)@\(maxPixel)" as NSString
-    if let cached = thumbnails.object(forKey: key) { return cached }
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-          let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-              kCGImageSourceCreateThumbnailFromImageAlways: true,
-              kCGImageSourceCreateThumbnailWithTransform: true,
-              kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-          ] as CFDictionary) else { return nil }
-    let result = NSImage(cgImage: image, size: .zero)
-    thumbnails.setObject(result, forKey: key)
-    return result
+// Decodes a small preview with ImageIO instead of the full image.
+func thumbnail(_ data: Data, maxPixel: Int) -> CGImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+    ] as CFDictionary)
 }
 
 func oneLine(_ text: String) -> String {

@@ -3,19 +3,22 @@ import WidgetKit
 
 struct Entry: TimelineEntry {
     let date: Date
-    let clips: [Clip]
-    let total: Int
+    let items: [WidgetItem]
 }
 
+// The widget never sees the encrypted history: the app writes widget.json with just the rows it shows.
 struct Provider: TimelineProvider {
     func entry() -> Entry {
-        let file = sharedDir.appendingPathComponent("history.json")
-        let all = (try? JSONDecoder().decode([Clip].self, from: Data(contentsOf: file))) ?? []
-        return Entry(date: .now, clips: Array((all.filter(\.pinned) + all.filter { !$0.pinned }).prefix(7)), total: all.count)
+        let file = sharedDir.appendingPathComponent("widget.json")
+        return Entry(date: .now, items: (try? JSONDecoder().decode([WidgetItem].self, from: Data(contentsOf: file))) ?? [])
     }
 
     func placeholder(in context: Context) -> Entry {
-        Entry(date: .now, clips: [Clip(text: "Copied text shows up here"), Clip(text: "#0000C7"), Clip(text: "meet.google.com")], total: 3)
+        Entry(date: .now, items: [
+            WidgetItem(title: "Copied text shows up here", kind: .text, pinned: false, date: .now, token: "a"),
+            WidgetItem(title: "#0000C7", kind: .color, pinned: false, date: .now, token: "b", swatch: "#0000C7"),
+            WidgetItem(title: "meet.google.com", kind: .link, pinned: false, date: .now, token: "c"),
+        ])
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
@@ -35,15 +38,10 @@ struct ClipWidgetView: View {
     var body: some View {
         let rows = family == .systemLarge ? 7 : 3
         VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text("Clipboard").font(.system(size: 13, weight: .bold))
-                Spacer()
-                Text(family == .systemSmall ? "\(entry.total)" : "\(entry.total) items")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.bottom, 2)
-            if entry.clips.isEmpty {
+            Text("Clipboard")
+                .font(.system(size: 13, weight: .bold))
+                .padding(.bottom, 2)
+            if entry.items.isEmpty {
                 Spacer()
                 Text("Copy something to start")
                     .font(.system(size: 12))
@@ -51,10 +49,8 @@ struct ClipWidgetView: View {
                     .frame(maxWidth: .infinity)
                 Spacer()
             } else {
-                ForEach(entry.clips.prefix(rows)) { clip in
-                    Link(destination: URL(string: "cliphistory://copy/\(clip.key)")!) {
-                        row(clip)
-                    }
+                ForEach(entry.items.prefix(rows)) { item in
+                    Link(destination: link(item)) { row(item) }
                 }
                 Spacer(minLength: 0)
             }
@@ -62,17 +58,20 @@ struct ClipWidgetView: View {
         // ponytail: a material background; macOS swaps it for glass in the Clear and Tinted widget styles
         .containerBackground(.ultraThinMaterial, for: .widget)
         // ponytail: fallback in case a small widget only honours one tap target; row Links still win where supported
-        .widgetURL(entry.clips.first.map { URL(string: "cliphistory://copy/\($0.key)")! })
+        .widgetURL(entry.items.first.map(link))
     }
 
-    func row(_ clip: Clip) -> some View {
-        let kind = Kind.of(clip)
-        let text = clip.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    func link(_ item: WidgetItem) -> URL {
+        URL(string: "cliphistory://copy/\(item.token)")!
+    }
+
+    func row(_ item: WidgetItem) -> some View {
+        let kind = item.kind
         return HStack(spacing: 8) {
             Group {
-                if kind == .image, let name = clip.image, let image = thumbnail(sharedDir.appendingPathComponent("images").appendingPathComponent(name), maxPixel: 96) {
+                if let data = item.thumbnail, let image = NSImage(data: data) {
                     Image(nsImage: image).resizable().scaledToFill()
-                } else if kind == .color, let swatch = hexColor(text) {
+                } else if let swatch = item.swatch.flatMap(hexColor) {
                     swatch.color
                 } else {
                     Image(systemName: kind.icon)
@@ -86,7 +85,7 @@ struct ClipWidgetView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(kind == .image ? "Image" : kind == .link ? linkDisplay(text) : kind == .color ? text.uppercased() : oneLine(text))
+                Text(item.title)
                     .font(.system(size: 12, weight: .semibold, design: kind == .code || kind == .color ? .monospaced : .default))
                     .lineLimit(1)
                     .truncationMode(kind == .link ? .middle : .tail)
@@ -96,12 +95,12 @@ struct ClipWidgetView: View {
             }
             Spacer(minLength: 4)
             if family != .systemSmall {
-                if clip.pinned {
+                if item.pinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(.orange)
                 }
-                Text(shortAgo(clip.date))
+                Text(shortAgo(item.date))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
             }

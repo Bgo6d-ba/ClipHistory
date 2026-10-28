@@ -5,102 +5,6 @@ import ServiceManagement
 import SwiftUI
 import WidgetKit
 
-let limit = 50
-// ponytail: fixed 7 days; make it a setting if people want to change it
-let maxAge: TimeInterval = 7 * 24 * 60 * 60
-// ponytail: images over 20 MB are skipped to keep the history folder small
-let maxImageBytes = 20_000_000
-let skipTypes: Set<NSPasteboard.PasteboardType> = [
-    .init("org.nspasteboard.ConcealedType"),
-    .init("org.nspasteboard.TransientType"),
-]
-let storeFile = sharedDir.appendingPathComponent("history.json")
-let legacyDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("ClipHistory")
-
-final class Store: ObservableObject {
-    @Published var items: [Clip] = []
-    let file: URL
-    var imagesDir: URL { file.deletingLastPathComponent().appendingPathComponent("images") }
-
-    init(file: URL) {
-        self.file = file
-        guard let data = try? Data(contentsOf: file) else { return }
-        items = (try? JSONDecoder().decode([Clip].self, from: data))
-            ?? (try? JSONDecoder().decode([String].self, from: data))?.map { Clip(text: $0) }
-            ?? []
-        for index in items.indices where items[index].date == nil {
-            items[index].date = Date()
-        }
-        prune()
-    }
-
-    func prune() {
-        let cutoff = Date().addingTimeInterval(-maxAge)
-        let before = items.count
-        items.removeAll { !$0.pinned && ($0.date ?? .distantFuture) < cutoff }
-        if items.count != before { save() }
-    }
-
-    func add(_ text: String) {
-        insert(Clip(text: text))
-    }
-
-    func addImage(_ png: Data) {
-        let name = SHA256.hash(data: png).prefix(8).map { String(format: "%02x", $0) }.joined() + ".png"
-        let url = imagesDir.appendingPathComponent(name)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            try? FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-            try? png.write(to: url)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        }
-        insert(Clip(text: "", image: name))
-    }
-
-    func insert(_ clip: Clip) {
-        if let index = items.firstIndex(where: { $0.id == clip.id }) {
-            if items[index].pinned { return }
-            items.remove(at: index)
-        }
-        items.insert(clip, at: 0)
-        var unpinned = 0
-        items.removeAll { clip in
-            guard !clip.pinned else { return false }
-            unpinned += 1
-            return unpinned > limit
-        }
-        save()
-    }
-
-    func delete(_ clip: Clip) {
-        items.removeAll { $0.id == clip.id }
-        save()
-    }
-
-    func togglePin(_ clip: Clip) {
-        guard let index = items.firstIndex(where: { $0.id == clip.id }) else { return }
-        items[index].pinned.toggle()
-        save()
-    }
-
-    func clear() {
-        items.removeAll { !$0.pinned }
-        save()
-    }
-
-    func save() {
-        guard let data = try? JSONEncoder().encode(items) else { return }
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: file, options: .atomic)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        let keep = Set(items.compactMap(\.image))
-        for name in (try? FileManager.default.contentsOfDirectory(atPath: imagesDir.path)) ?? [] where !keep.contains(name) {
-            try? FileManager.default.removeItem(at: imagesDir.appendingPathComponent(name))
-        }
-        WidgetCenter.shared.reloadAllTimelines()
-    }
-}
-
 final class PanelModel: ObservableObject {
     let store: Store
     @Published var query = "" { didSet { selection = 0 } }
@@ -167,6 +71,16 @@ struct HistoryView: View {
                 Menu {
                     Button("Clear History…") { model.confirmingClear = true }
                         .disabled(store.items.allSatisfy(\.pinned))
+                    Picker("Keep History", selection: Binding(
+                        get: { Retention.current },
+                        set: { retention in
+                            Retention.current = retention
+                            store.maxAge = retention.maxAge
+                            store.prune()
+                        }
+                    )) {
+                        ForEach(Retention.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
                     Toggle("Open at Login", isOn: Binding(
                         get: { SMAppService.mainApp.status == .enabled },
                         set: { on in
@@ -331,7 +245,7 @@ struct HistoryView: View {
         let text = clip.text.trimmingCharacters(in: .whitespacesAndNewlines)
         switch kind {
         case .image:
-            if let name = clip.image, let image = thumbnail(store.imagesDir.appendingPathComponent(name), maxPixel: 200) {
+            if let name = clip.image, let image = store.preview(name) {
                 Image(nsImage: image).resizable().scaledToFill()
             } else {
                 Image(systemName: "photo").foregroundStyle(.secondary)
@@ -381,7 +295,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     let pasteboard = NSPasteboard.general
     lazy var lastChange = pasteboard.changeCount
-    let store = Store(file: storeFile)
+    let store = Store(dir: sharedDir, key: Vault.loadOrCreateKey(), maxAge: Retention.current.maxAge,
+                      widgetFile: groupID == nil ? nil : sharedDir.appendingPathComponent("widget.json"))
     lazy var model = PanelModel(store: store)
     let panel = NotchPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
     var hotKey: EventHotKeyRef?
@@ -445,8 +360,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         lastChange = pasteboard.changeCount
         let types = pasteboard.types ?? []
         if !skipTypes.isDisjoint(with: types) { return }
+        // ponytail: the app in front when the change is noticed (up to 0.5 s later) is taken as the source
+        if let source = NSWorkspace.shared.frontmostApplication?.bundleIdentifier, Secrets.ignoredApps.contains(source) { return }
         if let text = pasteboard.string(forType: .string) {
-            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { store.add(text) }
+            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !Secrets.looksSecret(text) { store.add(text) }
             return
         }
         if types.contains(.fileURL) { return }
@@ -498,7 +415,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func write(_ clip: Clip, to board: NSPasteboard) {
         board.clearContents()
-        if let name = clip.image, let image = NSImage(contentsOf: store.imagesDir.appendingPathComponent(name)) {
+        if let name = clip.image, let image = store.imageData(name).flatMap(NSImage.init(data:)) {
             board.writeObjects([image])
         } else {
             board.setString(clip.text, forType: .string)
@@ -541,67 +458,14 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where url.scheme == "cliphistory" && url.host() == "copy" {
-            if let clip = store.items.first(where: { $0.key == url.lastPathComponent }) { pick(clip) }
+        for url in urls {
+            if let clip = store.clip(forDeepLink: url) { pick(clip) }
         }
     }
 }
 
 if CommandLine.arguments.contains("--selftest") {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let file = dir.appendingPathComponent("history.json")
-    try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    try! JSONEncoder().encode(["old"]).write(to: file)
-    let summary = { (store: Store) in store.items.map { $0.id + ($0.pinned ? "*" : "") } }
-    let store = Store(file: file)
-    precondition(summary(store) == ["old"] && store.items[0].date != nil, "old [String] format loads with a date")
-    store.togglePin(store.items[0])
-    for index in 0..<55 { store.add("x\(index)") }
-    precondition(store.items.filter { !$0.pinned }.count == limit, "unpinned capped at limit")
-    precondition(summary(store).contains("old*"), "pin survives the limit")
-    store.add("x50")
-    precondition(store.items.first { !$0.pinned }?.text == "x50", "re-copy moves to top")
-    store.add("old")
-    precondition(summary(store).filter { $0.hasPrefix("old") } == ["old*"], "re-copy keeps pin")
-    store.delete(store.items.first { $0.text == "x50" }!)
-    precondition(!summary(store).contains("x50"), "delete removes one item")
-    store.clear()
-    precondition(summary(store) == ["old*"], "clear keeps pins")
-    precondition(summary(Store(file: file)) == summary(store), "saved and reloaded")
-
-    let pixel = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1, bitsPerSample: 8,
-                                 samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-        .representation(using: .png, properties: [:])!
-    store.addImage(pixel)
-    store.addImage(pixel)
-    let image = store.items.first { $0.image != nil }!
-    precondition(store.items.filter { $0.image != nil }.count == 1, "same image is stored once")
-    precondition(FileManager.default.fileExists(atPath: store.imagesDir.appendingPathComponent(image.image!).path), "image file written")
-    store.delete(image)
-    precondition(!FileManager.default.fileExists(atPath: store.imagesDir.appendingPathComponent(image.image!).path), "deleting removes the file")
-
-    let kinds: [(String, Kind)] = [
-        ("#FFFFFF", .color), ("#0000c7", .color), ("rgb(1, 2, 3)", .color),
-        ("https://meet.google.com/abc", .link), ("meet.google.com", .link), ("www.apple.com", .link),
-        ("func a() { return 1 }", .code), ("git status", .code), ("const x = 1;", .code),
-        ("Introducing Pulse 1.0", .text), ("hello", .text),
-    ]
-    for (text, expected) in kinds {
-        precondition(Kind.of(Clip(text: text)) == expected, "\(text) should be \(expected)")
-    }
-    precondition(Kind.of(image) == .image, "image clip is an image")
-    precondition(linkDisplay("https://www.meet.google.com/?x=1") == "meet.google.com", "link shows host")
-
-    let month = Date().addingTimeInterval(-30 * 24 * 60 * 60)
-    try! JSONEncoder().encode([
-        Clip(text: "fresh"),
-        Clip(text: "stale", date: month),
-        Clip(text: "stale pin", pinned: true, date: month),
-    ]).write(to: file)
-    precondition(summary(Store(file: file)) == ["fresh", "stale pin*"], "items older than maxAge expire, pins stay")
-    try? FileManager.default.removeItem(at: dir)
-    print("selftest ok")
+    selfTest()
     exit(0)
 }
 
@@ -611,8 +475,12 @@ if flock(lock, LOCK_EX | LOCK_NB) != 0 {
     exit(0)
 }
 
-if !FileManager.default.fileExists(atPath: storeFile.path),
-   FileManager.default.fileExists(atPath: legacyDir.appendingPathComponent("history.json").path) {
+// Version 1.0 kept history in Application Support; signed builds now keep it in the App Group container.
+let legacyDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    .appendingPathComponent("ClipHistory")
+let exists = { (url: URL, name: String) in FileManager.default.fileExists(atPath: url.appendingPathComponent(name).path) }
+if legacyDir.standardizedFileURL != sharedDir.standardizedFileURL,
+   !exists(sharedDir, "history.dat"), !exists(sharedDir, "history.json"), exists(legacyDir, "history.json") {
     try? FileManager.default.createDirectory(at: sharedDir, withIntermediateDirectories: true)
     for name in ["history.json", "images"] {
         try? FileManager.default.moveItem(at: legacyDir.appendingPathComponent(name), to: sharedDir.appendingPathComponent(name))
