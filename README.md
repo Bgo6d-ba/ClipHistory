@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="128" alt="ClipHistory icon">
+
 # ClipHistory
 
 A small, free clipboard history app for macOS. It lives in the menu bar, remembers what you copy, and gives
@@ -117,6 +119,7 @@ ClipHistory.app/Contents/MacOS/ClipHistory --show       # opens the popup on lau
 | `Shared.swift` | code shared with the widget: clip model, categories, thumbnails, Liquid Glass helper |
 | `Widget.swift` | desktop widget |
 | `build.sh` | build, sign and install |
+| `AppIcon.icon` | app icon source (Icon Composer); `AppIcon.icns` is the prebuilt fallback for builds without Xcode |
 
 ## Dependencies
 

@@ -39,6 +39,16 @@ universal() {
 
 universal "Shared.swift Store.swift SelfTest.swift main.swift" "$APP/Contents/MacOS/ClipHistory"
 
+# The icon source is AppIcon.icon (Icon Composer). Xcode's actool turns it into the Liquid Glass icon for macOS 26
+# plus a classic .icns; without Xcode the prebuilt AppIcon.icns from the repo is used.
+mkdir -p "$APP/Contents/Resources"
+if xcrun --find actool >/dev/null 2>&1; then
+    xcrun actool AppIcon.icon --compile "$APP/Contents/Resources" --platform macosx --minimum-deployment-target 14.0 \
+        --app-icon AppIcon --output-partial-info-plist build/icon.plist >/dev/null
+else
+    cp AppIcon.icns "$APP/Contents/Resources/"
+fi
+
 plist_head='<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -55,6 +65,8 @@ $plist_head
     <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundleIconName</key><string>AppIcon</string>
     $group_key
     <key>CFBundleURLTypes</key>
     <array><dict>
