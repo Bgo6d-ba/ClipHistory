@@ -1,4 +1,6 @@
 node_modules/
 out/
 stills/
+sheet.png
 *.wav
+voice.json

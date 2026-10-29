@@ -1,0 +1,14 @@
+{
+  "name": "cliphistory-film",
+  "description": "ClipHistory 60 s product film: a Three.js glass studio scene with a synthesized soundtrack, rendered frame by frame to 1080p60.",
+  "scripts": {
+    "audio": "node audio.js",
+    "serve": "node audio.js && node render.js serve",
+    "still": "node render.js still",
+    "render": "node audio.js && node render.js video"
+  },
+  "dependencies": {
+    "playwright-core": "^1.64.1"
+  },
+  "private": true
+}

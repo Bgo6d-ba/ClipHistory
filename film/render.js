@@ -1,11 +1,11 @@
 const { chromium } = require('playwright-core');
 const http = require('http'), fs = require('fs'), path = require('path'), { spawn } = require('child_process');
 
-const PAGE = 'index.html', AUDIO = 'reel.wav', NAME = 'cliphistory_reel';
-const DIR = __dirname, FPS = 60, DUR = 30, TOTAL = FPS * DUR;
+const PAGE = 'index.html', AUDIO = 'film.wav', NAME = 'cliphistory_presentation';
+const DIR = __dirname, FPS = 60, DUR = require('./voice.json').duration, TOTAL = Math.ceil(FPS * DUR);
 const LANG = '';
 const MAC_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.wav': 'audio/wav' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.wav': 'audio/wav', '.json': 'application/json' };
 
 const server = http.createServer((q, r) => {
   const rel = decodeURIComponent(q.url.split('?')[0]).replace(/^\/$/, '/' + PAGE);
