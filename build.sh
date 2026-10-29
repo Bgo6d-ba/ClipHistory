@@ -61,8 +61,8 @@ $plist_head
     <key>CFBundleName</key><string>ClipHistory</string>
     <key>CFBundleExecutable</key><string>ClipHistory</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.3</string>
-    <key>CFBundleVersion</key><string>4</string>
+    <key>CFBundleShortVersionString</key><string>1.4</string>
+    <key>CFBundleVersion</key><string>5</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -97,8 +97,8 @@ $plist_head
     <key>CFBundleDisplayName</key><string>ClipHistory</string>
     <key>CFBundleExecutable</key><string>ClipHistoryWidget</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
-    <key>CFBundleShortVersionString</key><string>1.3</string>
-    <key>CFBundleVersion</key><string>4</string>
+    <key>CFBundleShortVersionString</key><string>1.4</string>
+    <key>CFBundleVersion</key><string>5</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     $group_key
     <key>NSExtension</key>
