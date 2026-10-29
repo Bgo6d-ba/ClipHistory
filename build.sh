@@ -37,7 +37,7 @@ universal() {
     lipo -create build/arm64 build/x86_64 -output "$out"
 }
 
-universal "Shared.swift Store.swift SelfTest.swift main.swift" "$APP/Contents/MacOS/ClipHistory"
+universal "Shared.swift Store.swift SelfTest.swift Demo.swift main.swift" "$APP/Contents/MacOS/ClipHistory"
 
 # The icon source is AppIcon.icon (Icon Composer). Xcode's actool turns it into the Liquid Glass icon for macOS 26
 # plus a classic .icns; without Xcode the prebuilt AppIcon.icns from the repo is used.

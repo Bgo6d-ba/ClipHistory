@@ -7,8 +7,8 @@ import WidgetKit
 
 final class PanelModel: ObservableObject {
     let store: Store
-    @Published var query = "" { didSet { selection = 0 } }
-    @Published var kind: Kind? { didSet { selection = 0 } }
+    @Published var query = "" { didSet { if query != oldValue { selection = 0 } } }
+    @Published var kind: Kind? { didSet { if kind != oldValue { selection = 0 } } }
     @Published var selection = 0
     @Published var confirmingClear = false
 
@@ -117,7 +117,7 @@ struct HistoryView: View {
                     LazyHStack(spacing: 8) {
                         ForEach(Array(visible.enumerated()), id: \.element.id) { index, clip in
                             card(clip, selected: index == model.selection)
-                                .onHover { if $0 && model.selection != index { model.selection = index } }
+                                .onHover { if $0 && demo == nil && model.selection != index { model.selection = index } }
                                 .id(clip.id)
                         }
                     }
@@ -276,7 +276,9 @@ struct HistoryView: View {
                 Text(kind == .link ? linkDisplay(text) : oneLine(text))
                     .font(.system(size: 9.5, weight: .semibold))
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    // a link is one long word: keep it on one line, shrink a little, then truncate in the middle
+                    .lineLimit(kind == .link ? 1 : 2)
+                    .minimumScaleFactor(kind == .link ? 0.75 : 1)
                     .truncationMode(kind == .link ? .middle : .tail)
             }
             .padding(.horizontal, 6)
@@ -295,12 +297,13 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     let pasteboard = NSPasteboard.general
     lazy var lastChange = pasteboard.changeCount
-    let store = Store(dir: sharedDir, key: Vault.loadOrCreateKey(), maxAge: Retention.current.maxAge,
-                      widgetFile: groupID == nil ? nil : sharedDir.appendingPathComponent("widget.json"))
+    let store = demo?.store ?? Store(dir: sharedDir, key: Vault.loadOrCreateKey(), maxAge: Retention.current.maxAge,
+                                     widgetFile: groupID == nil ? nil : sharedDir.appendingPathComponent("widget.json"))
     lazy var model = PanelModel(store: store)
     let panel = NotchPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
     var hotKey: EventHotKeyRef?
     var servicePick: Clip??
+    var demoBackdrop: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = self
@@ -319,6 +322,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.delegate = self
 
+        if let demo {
+            demo.apply(to: self)
+            return
+        }
         // ponytail: NSPasteboard has no change notification, so poll changeCount
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(timer, forMode: .common)
@@ -397,12 +404,16 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.query = ""
         model.kind = nil
         model.confirmingClear = false
+        let scale = demo?.scale ?? 1
         panel.contentView = NSHostingView(rootView: HistoryView(model: model, store: store) { [weak self] in
             self?.pick($0)
-        })
-        let size = NSSize(width: 520, height: 160)
-        let frame = NSRect(x: screen.frame.midX - size.width / 2, y: screen.visibleFrame.maxY - size.height - 8,
-                           width: size.width, height: size.height)
+        }
+        .frame(width: 520, height: 160)
+        .scaleEffect(scale, anchor: .topLeading)
+        .frame(width: 520 * scale, height: 160 * scale, alignment: .topLeading))
+        let size = NSSize(width: 520 * scale, height: 160 * scale)
+        let top = demo == nil ? screen.visibleFrame.maxY - size.height - 8 : screen.frame.midY - size.height / 2
+        let frame = NSRect(x: screen.frame.midX - size.width / 2, y: top, width: size.width, height: size.height)
         panel.setFrame(frame.offsetBy(dx: 0, dy: 12), display: false)
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
@@ -470,7 +481,7 @@ if CommandLine.arguments.contains("--selftest") {
 }
 
 let lock = open(NSTemporaryDirectory() + "ClipHistory.lock", O_CREAT | O_RDWR, 0o600)
-if flock(lock, LOCK_EX | LOCK_NB) != 0 {
+if demo == nil && flock(lock, LOCK_EX | LOCK_NB) != 0 {
     print("ClipHistory is already running")
     exit(0)
 }
